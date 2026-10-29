@@ -1995,6 +1995,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                           valEqHigh: document.getElementById('val-eq-high'),
                           eqBands: document.getElementById('eq-bands'),
                           btnResetEqBands: document.getElementById('btn-reset-eq-bands'),
+                          btnResetAudio: document.getElementById('btn-reset-audio'),
 
                           sliderScale: document.getElementById('settings-slider-scale') || document.getElementById('slider-scale'),
                           valScale: document.getElementById('settings-val-scale') || document.getElementById('val-scale'),
@@ -15613,10 +15614,11 @@ function bindCoverHoldZoom(wrapEl) {
     ctx.clip();
     const heroPath = document.getElementById('m3-hero-shape-path');
     if (heroPath && document.body.classList.contains('m3-hero-covers-on')) {
+      const baseScale = (COVER_PX / 2) / 160 * 1.02;
       let heroD = '';
       for (let k = 0; k <= K; k++) {
         const th = -Math.PI + (Math.PI * 2 * (k % K)) / K;
-        const r = radiusAt(th);
+        const r = rawRadiusAt(th) * baseScale;
         const nx = Math.max(0, Math.min(1, 0.5 + (Math.cos(th + rot) * r) / (COVER_PX * 1.05)));
         const ny = Math.max(0, Math.min(1, 0.5 + (Math.sin(th + rot) * r) / (COVER_PX * 1.05)));
         if (k === 0) heroD += `M ${nx.toFixed(4)} ${ny.toFixed(4)}`;
@@ -17553,8 +17555,9 @@ function bindCoverHoldZoom(wrapEl) {
     });
   }
 
-  if (el.btnResetAudio) {
-    el.btnResetAudio.addEventListener('click', () => {
+  const btnResetAudio = el.btnResetAudio || document.getElementById('btn-reset-audio');
+  if (btnResetAudio) {
+    btnResetAudio.addEventListener('click', () => {
       state.activePresetId = 'p_default';
       state.audioSettings = { speed: 1.0, speedPitch: 1.0, pitch: 0, reverb: 0, distortion: 0, volume: 1.0, echo: 0, eq: { low: 0, mid: 0, high: 0 }, eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
       state.hqSettings = { engine: 'hqmusic-3', preset: 'studio', vocal: 0, air: 0, bass: 0 };
