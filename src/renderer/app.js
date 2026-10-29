@@ -249,6 +249,7 @@ window.HomeCache = HomeCache;
 document.addEventListener('DOMContentLoaded', async () => {
   var state = { vibeTracks: [] };
   var myWaveCurrentTracks = [];
+  var maybeShowYtAuthSheet = async function() {};
   try { localStorage.removeItem('riff_stats'); } catch (e) {}
 
   await HomeCache.init();
@@ -4390,7 +4391,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const qQuality = encodeURIComponent(localStorage.getItem('riff_audio_quality') || 'medium');
       const qSearch = encodeURIComponent(track.searchQuery || ((track.artist ? track.artist + ' - ' : '') + track.title));
-      const streamInfoUrl = `http://127.0.0.1:${state.serverPort}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${track.platform || state.platform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}&quality=${qQuality}&q=${qSearch}`;
+      const streamInfoUrl = `http://127.0.0.1:${state.serverPort}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${(state.platform === 'soundcloud' && (!track.url || !track.url.includes('youtube.com'))) ? 'soundcloud' : (track.platform || state.platform || 'ytmusic')}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}&quality=${qQuality}&q=${qSearch}`;
       let res;
       try {
         res = await fetch(streamInfoUrl, { signal });
@@ -7731,7 +7732,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (sheet) sheet.classList.add('hidden');
     }
 
-    async function maybeShowYtAuthSheet() {
+    maybeShowYtAuthSheet = async function() {
       if (ytAuthSheetDismissed) return;
       const sheet = document.getElementById('yt-auth-sheet');
       if (!sheet) return;
