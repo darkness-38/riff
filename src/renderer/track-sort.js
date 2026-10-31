@@ -83,7 +83,9 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
         updatePosition();
       }
     }
-    rafId = requestAnimationFrame(autoScrollLoop);
+    if (typeof requestAnimationFrame !== 'undefined') {
+      rafId = requestAnimationFrame(autoScrollLoop);
+    }
   }
 
   function updatePosition() {
@@ -148,10 +150,11 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
     isDragging = true;
     suppressClick = true;
 
-    scrollEl = container.closest('.content-view, .main-content, #main-content') || document.scrollingElement || document.documentElement;
+    scrollEl = container.closest('.content-view, .main-content, #main-content') || (typeof document !== 'undefined' ? (document.scrollingElement || document.documentElement) : null);
     startScrollTop = scrollEl ? scrollEl.scrollTop : 0;
 
     container.dataset.isDraggingTrack = '1';
+    container._isDraggingReorder = true;
     container.style.userSelect = 'none';
     draggedItem.classList.add('is-dragging');
 
@@ -170,6 +173,7 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
     itemMetrics = items.map((el, i) => ({
       el,
       index: i,
+      trackIndex: (el.dataset && typeof el.dataset.trackIndex !== 'undefined') ? parseInt(el.dataset.trackIndex, 10) : i,
       top: el.offsetTop,
       height: el.offsetHeight
     }));
@@ -177,7 +181,9 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
     if (scrollEl) {
       scrollEl.addEventListener('scroll', onScroll, { passive: true });
     }
-    rafId = requestAnimationFrame(autoScrollLoop);
+    if (typeof requestAnimationFrame !== 'undefined') {
+      rafId = requestAnimationFrame(autoScrollLoop);
+    }
   }
 
   function onPointerDown(e) {
@@ -224,7 +230,7 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
 
   function onPointerUp() {
     clearTimeout(pressTimer);
-    if (rafId) cancelAnimationFrame(rafId);
+    if (rafId && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(rafId);
     if (scrollEl) {
       scrollEl.removeEventListener('scroll', onScroll);
     }
@@ -234,7 +240,10 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
 
     delete container.dataset.isDraggingTrack;
 
-    if (!draggedItem) return;
+    if (!draggedItem) {
+      container._isDraggingReorder = false;
+      return;
+    }
 
     const item = draggedItem;
     const currentActiveId = activePointerId;
@@ -274,33 +283,49 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
         container.classList.add('no-enter-anim');
 
         if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
-          const currentChildren = Array.from(container.querySelectorAll('.track-row'));
-          if (toIdx > fromIdx) {
-            const targetEl = currentChildren[toIdx];
-            if (targetEl) {
-              container.insertBefore(item, targetEl.nextSibling);
-            }
-          } else {
-            const targetEl = currentChildren[toIdx];
-            if (targetEl) {
-              container.insertBefore(item, targetEl);
-            }
-          }
-
-          container.querySelectorAll('.track-row').forEach((r, i) => {
-            r.dataset.trackIndex = String(i);
-            const num = r.querySelector('.track-row-index');
-            if (num) num.textContent = String(i + 1);
-          });
+          const fromTrackIdx = (itemMetrics[fromIdx] && typeof itemMetrics[fromIdx].trackIndex === 'number')
+            ? itemMetrics[fromIdx].trackIndex
+            : fromIdx;
+          const toTrackIdx = (itemMetrics[toIdx] && typeof itemMetrics[toIdx].trackIndex === 'number')
+            ? itemMetrics[toIdx].trackIndex
+            : toIdx;
 
           if (typeof onReorder === 'function') {
-            onReorder(fromIdx, toIdx);
+            onReorder(fromTrackIdx, toTrackIdx);
+          }
+
+          if (typeof container._renderChunk === 'function') {
+            container._lastStartIndex = -1;
+            container._lastEndIndex = -1;
+            container._renderChunk();
+          } else {
+            const currentChildren = Array.from(container.querySelectorAll('.track-row'));
+            if (toIdx > fromIdx) {
+              const targetEl = currentChildren[toIdx];
+              if (targetEl) {
+                container.insertBefore(item, targetEl.nextSibling);
+              }
+            } else {
+              const targetEl = currentChildren[toIdx];
+              if (targetEl) {
+                container.insertBefore(item, targetEl);
+              }
+            }
+
+            container.querySelectorAll('.track-row').forEach((r, i) => {
+              r.dataset.trackIndex = String(i);
+              const num = r.querySelector('.track-row-index');
+              if (num) num.textContent = String(i + 1);
+            });
           }
         }
+
+        container._isDraggingReorder = false;
 
         setTimeout(() => { suppressClick = false; }, 80);
       }, isPerf ? 0 : 160);
     } else {
+      container._isDraggingReorder = false;
       suppressClick = false;
     }
   }

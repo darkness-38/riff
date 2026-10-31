@@ -11000,6 +11000,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderTracks(container, tracks, context = 'search') {
     if (!container) return;
     
+    container._currentTracks = tracks;
+    container._currentContext = context;
+
     const scrollParent = document.querySelector('.main-content');
     if (container._vScrollHandler && scrollParent) {
       scrollParent.removeEventListener('scroll', container._vScrollHandler);
@@ -11025,6 +11028,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     function renderChunk() {
       if (!scrollParent || container._isDraggingReorder) return;
+      const currentList = container._currentTracks || tracks;
+      if (!currentList || currentList.length === 0) return;
       const parentRect = scrollParent.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
       const relativeTop = containerRect.top - parentRect.top + scrollParent.scrollTop;
@@ -11037,29 +11042,32 @@ document.addEventListener('DOMContentLoaded', async () => {
       endIndex = Math.ceil(endIndex / 5) * 5;
       
       startIndex = Math.max(0, startIndex);
-      endIndex = Math.min(tracks.length, endIndex);
+      endIndex = Math.min(currentList.length, endIndex);
       
-      if (container._lastStartIndex === startIndex && container._lastEndIndex === endIndex) return;
+      if (container._lastStartIndex === startIndex && container._lastEndIndex === endIndex && container._renderedTracksRef === currentList) return;
       container._lastStartIndex = startIndex;
       container._lastEndIndex = endIndex;
+      container._renderedTracksRef = currentList;
       
       const currentCanonicalId = state.currentTrack ? getTrackCanonicalId(state.currentTrack) : '';
       const fragment = document.createDocumentFragment();
       for (let idx = startIndex; idx < endIndex; idx++) {
-         const track = tracks[idx];
-         const row = createTrackRow(track, idx, currentCanonicalId, context, tracks, container);
+         const track = currentList[idx];
+         const row = createTrackRow(track, idx, currentCanonicalId, context, currentList, container);
          if (container._hasInitialRendered) row.style.animation = 'none';
          fragment.appendChild(row);
       }
       
       container.innerHTML = '';
       container.style.paddingTop = `${startIndex * itemHeight}px`;
-      container.style.paddingBottom = `${(tracks.length - endIndex) * itemHeight}px`;
+      container.style.paddingBottom = `${(currentList.length - endIndex) * itemHeight}px`;
       container.appendChild(fragment);
       container._hasInitialRendered = true;
       highlightPlayingRow();
     }
     
+    container._renderChunk = renderChunk;
+
     container._vScrollHandler = () => {
       if (!container._ticking) {
         window.requestAnimationFrame(() => {
@@ -11077,6 +11085,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     container._hasInitialRendered = false;
     container._lastStartIndex = -1;
     container._lastEndIndex = -1;
+    container._renderedTracksRef = null;
     renderChunk();
   }
 
@@ -12837,6 +12846,7 @@ function renderClickableArtists(container, rawArtist, hintTrack = null) {
     container: el.favoritesTracksList,
     isFilterActive: () => Boolean(el.favoritesSearchInput && el.favoritesSearchInput.value.trim()),
     onReorder: (fromIdx, toIdx) => {
+      if (!Array.isArray(state.favorites)) return;
       if (el.favoritesSort && el.favoritesSort.value !== 'manual') {
         el.favoritesSort.value = 'manual';
         setTrackSortMode('favorites', 'manual');
@@ -12848,11 +12858,20 @@ function renderClickableArtists(container, rawArtist, hintTrack = null) {
             opt.classList.toggle('selected', opt.dataset.value === 'manual');
           });
         }
+        if (el.favoritesTracksList && Array.isArray(el.favoritesTracksList._currentTracks)) {
+          state.favorites = el.favoritesTracksList._currentTracks.slice();
+        }
       }
       const savedScroll = el.mainContent ? el.mainContent.scrollTop : 0;
-      const [moved] = state.favorites.splice(fromIdx, 1);
-      state.favorites.splice(toIdx, 0, moved);
-      localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+      if (fromIdx >= 0 && fromIdx < state.favorites.length && toIdx >= 0 && toIdx < state.favorites.length) {
+        const [moved] = state.favorites.splice(fromIdx, 1);
+        state.favorites.splice(toIdx, 0, moved);
+        localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+        if (el.favoritesTracksList && Array.isArray(el.favoritesTracksList._currentTracks) && el.favoritesTracksList._currentTracks !== state.favorites) {
+          const [movedCur] = el.favoritesTracksList._currentTracks.splice(fromIdx, 1);
+          el.favoritesTracksList._currentTracks.splice(toIdx, 0, movedCur);
+        }
+      }
       if (el.favoritesSubtitle) {
         el.favoritesSubtitle.textContent = `${state.favorites.length} tracks saved`;
       }
@@ -12864,6 +12883,9 @@ function renderClickableArtists(container, rawArtist, hintTrack = null) {
     container: el.playlistTracksList,
     isFilterActive: () => Boolean(el.playlistSearchInput && el.playlistSearchInput.value.trim()),
     onReorder: (fromIdx, toIdx) => {
+      const pl = state.currentPlaylist || (state.playlists || []).find(p => p.id === state.currentPlaylistId);
+      if (!pl || !Array.isArray(pl.tracks)) return;
+
       if (el.playlistSort && el.playlistSort.value !== 'manual') {
         el.playlistSort.value = 'manual';
         setTrackSortMode('playlist', 'manual');
@@ -12875,13 +12897,19 @@ function renderClickableArtists(container, rawArtist, hintTrack = null) {
             opt.classList.toggle('selected', opt.dataset.value === 'manual');
           });
         }
+        if (el.playlistTracksList && Array.isArray(el.playlistTracksList._currentTracks)) {
+          pl.tracks = el.playlistTracksList._currentTracks.slice();
+        }
       }
       const savedScroll = el.mainContent ? el.mainContent.scrollTop : 0;
-      const pl = state.currentPlaylist || (state.playlists || []).find(p => p.id === state.currentPlaylistId);
-      if (pl && pl.tracks) {
+      if (fromIdx >= 0 && fromIdx < pl.tracks.length && toIdx >= 0 && toIdx < pl.tracks.length) {
         const [moved] = pl.tracks.splice(fromIdx, 1);
         pl.tracks.splice(toIdx, 0, moved);
         localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+        if (el.playlistTracksList && Array.isArray(el.playlistTracksList._currentTracks) && el.playlistTracksList._currentTracks !== pl.tracks) {
+          const [movedCur] = el.playlistTracksList._currentTracks.splice(fromIdx, 1);
+          el.playlistTracksList._currentTracks.splice(toIdx, 0, movedCur);
+        }
       }
       if (el.mainContent) el.mainContent.scrollTop = savedScroll;
     }
