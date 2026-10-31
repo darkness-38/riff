@@ -89,7 +89,11 @@ test('enableTrackSort maps virtual-scrolled DOM elements to actual track indices
 
   let reordered = null;
   let chunkRendered = false;
-  container._renderChunk = () => { chunkRendered = true; };
+  let draggingFlagDuringRender = null;
+  container._renderChunk = () => {
+    chunkRendered = true;
+    draggingFlagDuringRender = container._isDraggingReorder;
+  };
 
   const windowListeners = {};
   global.window = {
@@ -120,4 +124,5 @@ test('enableTrackSort maps virtual-scrolled DOM elements to actual track indices
   assert.deepStrictEqual(reordered, { from: 21, to: 22 });
   assert.strictEqual(container._isDraggingReorder, false);
   assert.strictEqual(chunkRendered, true);
+  assert.strictEqual(draggingFlagDuringRender, false, '_isDraggingReorder must be false when _renderChunk runs');
 });

@@ -98,10 +98,13 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
 
     const currentCenter = draggedStartTop + (draggedHeight / 2) + dy;
     let newTarget = 0;
+    let minDistance = Infinity;
     for (let i = 0; i < itemMetrics.length; i++) {
       const m = itemMetrics[i];
       const mid = m.top + (m.height / 2);
-      if (currentCenter > mid) {
+      const dist = Math.abs(currentCenter - mid);
+      if (dist < minDistance) {
+        minDistance = dist;
         newTarget = i;
       }
     }
@@ -281,6 +284,7 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
 
         container.style.userSelect = '';
         container.classList.add('no-enter-anim');
+        container._isDraggingReorder = false;
 
         if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
           const fromTrackIdx = (itemMetrics[fromIdx] && typeof itemMetrics[fromIdx].trackIndex === 'number')
@@ -297,6 +301,7 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
           if (typeof container._renderChunk === 'function') {
             container._lastStartIndex = -1;
             container._lastEndIndex = -1;
+            container._renderedTracksRef = null;
             container._renderChunk();
           } else {
             const currentChildren = Array.from(container.querySelectorAll('.track-row'));
@@ -319,8 +324,6 @@ function enableTrackSort(containerOrOpts, onReorderCb) {
             });
           }
         }
-
-        container._isDraggingReorder = false;
 
         setTimeout(() => { suppressClick = false; }, 80);
       }, isPerf ? 0 : 160);
