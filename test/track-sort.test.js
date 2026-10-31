@@ -67,3 +67,62 @@ test('backfill does not mutate the input list', () => {
   backfillAddedAt(list, true);
   assert.strictEqual(list[0].addedAt, undefined);
 });
+
+test('enableTrackSort maps virtual-scrolled DOM elements to actual track indices and invokes _renderChunk', async () => {
+  const { enableTrackSort } = require('../src/renderer/track-sort');
+
+  const listeners = {};
+  const container = {
+    dataset: {},
+    style: {},
+    classList: { add() {}, remove() {} },
+    addEventListener(evt, fn) { listeners[evt] = fn; },
+    closest() { return null; },
+    querySelectorAll() { return rows; }
+  };
+
+  const rows = [
+    { dataset: { trackIndex: '20' }, offsetTop: 0, offsetHeight: 60, style: { setProperty() {}, removeProperty() {} }, classList: { add() {}, remove() {} }, parentElement: container, closest(sel) { return sel === '.track-row' ? this : null; } },
+    { dataset: { trackIndex: '21' }, offsetTop: 60, offsetHeight: 60, style: { setProperty() {}, removeProperty() {} }, classList: { add() {}, remove() {} }, parentElement: container, closest(sel) { return sel === '.track-row' ? this : null; } },
+    { dataset: { trackIndex: '22' }, offsetTop: 120, offsetHeight: 60, style: { setProperty() {}, removeProperty() {} }, classList: { add() {}, remove() {} }, parentElement: container, closest(sel) { return sel === '.track-row' ? this : null; } }
+  ];
+
+  let reordered = null;
+  let chunkRendered = false;
+  let draggingFlagDuringRender = null;
+  container._renderChunk = () => {
+    chunkRendered = true;
+    draggingFlagDuringRender = container._isDraggingReorder;
+  };
+
+  const windowListeners = {};
+  global.window = {
+    addEventListener(evt, fn) { windowListeners[evt] = fn; },
+    removeEventListener(evt, fn) { delete windowListeners[evt]; }
+  };
+
+  enableTrackSort({
+    container,
+    onReorder: (from, to) => { reordered = { from, to }; }
+  });
+
+  listeners['pointerdown']({
+    button: 0,
+    clientX: 100,
+    clientY: 70,
+    pointerId: 1,
+    target: rows[1]
+  });
+
+  windowListeners['pointermove']({ clientX: 100, clientY: 135 });
+  assert.strictEqual(container._isDraggingReorder, true);
+
+  windowListeners['pointerup']();
+
+  await new Promise(r => setTimeout(r, 220));
+
+  assert.deepStrictEqual(reordered, { from: 21, to: 22 });
+  assert.strictEqual(container._isDraggingReorder, false);
+  assert.strictEqual(chunkRendered, true);
+  assert.strictEqual(draggingFlagDuringRender, false, '_isDraggingReorder must be false when _renderChunk runs');
+});
