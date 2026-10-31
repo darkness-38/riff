@@ -1836,6 +1836,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                           btnBackAlbum: document.getElementById('btn-back-album'),
                           btnSaveAlbum: document.getElementById('btn-save-album'),
+                          btnDownloadAlbum: document.getElementById('btn-download-album'),
                           albumDetailCover: document.getElementById('album-detail-cover'),
                           albumDetailTitle: document.getElementById('album-detail-title'),
                           albumDetailArtist: document.getElementById('album-detail-artist'),
@@ -9099,6 +9100,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const btnSaveAlbum = document.getElementById('btn-save-album');
+    const btnDownloadAlbum = document.getElementById('btn-download-album');
+    const btnPlayAlbum = document.getElementById('btn-play-album');
+    if (btnDownloadAlbum) {
+      btnDownloadAlbum.disabled = true;
+      btnDownloadAlbum.style.display = (album.type === 'Daily Mix') ? 'none' : '';
+    }
+    if (btnPlayAlbum) {
+      btnPlayAlbum.disabled = true;
+    }
     if (btnSaveAlbum) {
       if (album.type === 'Daily Mix') {
         btnSaveAlbum.style.display = 'none';
@@ -9278,6 +9288,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           };
         });
         album._tracks = albumTrackItems;
+        if (btnDownloadAlbum && album.type !== 'Daily Mix') btnDownloadAlbum.disabled = false;
+        if (btnPlayAlbum && albumTrackItems.length > 0) btnPlayAlbum.disabled = false;
         albumTrackItems.forEach((trackItem, idx) => {
           const row = createTrackRow(trackItem, idx, currentCanonicalId, 'album', albumTrackItems, listEl);
           row.addEventListener('click', (e) => {
@@ -21597,18 +21609,27 @@ function bindCoverHoldZoom(wrapEl) {
   async function updateDownloadCaptionPath() {
     const elPath = document.getElementById('download-caption-path');
     if (!elPath) return;
+    let baseDir = '~/Downloads';
     try {
       if (window.electronAPI && window.electronAPI.getDownloadDir) {
         const info = await window.electronAPI.getDownloadDir();
         if (info && info.dir) {
-          elPath.textContent = info.dir;
-          return;
+          baseDir = info.dir;
         }
       }
     } catch (e) {
       console.warn('getDownloadDir failed', e);
     }
-    elPath.textContent = '~/Downloads';
+    const custom = state.downloadDir || localStorage.getItem('riff_download_dir') || '';
+    if (custom) baseDir = custom;
+
+    if (downloadBatch && downloadBatch.isAlbum && downloadBatch.name) {
+      const safeSub = (downloadBatch.artist ? `${downloadBatch.artist} - ${downloadBatch.name}` : downloadBatch.name)
+        .replace(/[<>:"/\\|?*]/g, '').trim();
+      elPath.textContent = safeSub ? `${baseDir}/${safeSub}` : baseDir;
+    } else {
+      elPath.textContent = baseDir;
+    }
   }
 
   let trimDraft = { start: 0, end: 180, dur: 180 };
@@ -21849,15 +21870,23 @@ function bindCoverHoldZoom(wrapEl) {
     openModal(el.downloadModal);
   }
 
-  function openDownloadAllModal(playlist) {
+  function openDownloadAllModal(batch, type = 'playlist') {
     if (!el.downloadModal) return;
-    const tracks = (playlist && Array.isArray(playlist.tracks) ? playlist.tracks : []).filter(t => t.platform !== 'local');
+    const isAlbum = type === 'album';
+    const tracks = (batch && Array.isArray(batch.tracks) ? batch.tracks : []).filter(t => t.platform !== 'local');
     if (!tracks.length) {
-      showToast('No remote tracks to download in this playlist', 'info');
+      showToast(isAlbum ? 'No remote tracks to download in this album' : 'No remote tracks to download in this playlist', 'info');
       return;
     }
     trackToDownload = null;
-    downloadBatch = { name: playlist.name || 'Playlist', tracks };
+    const batchName = batch.name || batch.title || (isAlbum ? 'Album' : 'Playlist');
+    downloadBatch = {
+      name: batchName,
+      artist: batch.artist || '',
+      cover: batch.cover || '',
+      tracks,
+      isAlbum
+    };
     el.downloadModal.classList.add('batch-mode');
     const dlModeTabs = document.getElementById('dl-mode-tabs');
     if (dlModeTabs) dlModeTabs.style.display = 'none';
@@ -21866,11 +21895,21 @@ function bindCoverHoldZoom(wrapEl) {
     if (dlPaneDownload) dlPaneDownload.classList.remove('hidden');
     if (dlPaneTrim) dlPaneTrim.classList.add('hidden');
     const modalTitle = document.getElementById('download-modal-title');
-    if (modalTitle) modalTitle.textContent = 'Download playlist';
-    if (el.downloadPreviewTitle) el.downloadPreviewTitle.textContent = playlist.name || 'Playlist';
-    if (el.downloadPreviewArtist) el.downloadPreviewArtist.textContent = `${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
-    if (el.downloadPreviewThumb) el.downloadPreviewThumb.style.display = 'none';
-    if (el.downloadPreviewFallback) el.downloadPreviewFallback.style.display = 'none';
+    if (modalTitle) modalTitle.textContent = isAlbum ? 'Download album' : 'Download playlist';
+    if (el.downloadPreviewTitle) el.downloadPreviewTitle.textContent = batchName;
+    if (el.downloadPreviewArtist) {
+      const artistPart = batch.artist ? `${batch.artist} • ` : '';
+      el.downloadPreviewArtist.textContent = `${artistPart}${tracks.length} track${tracks.length === 1 ? '' : 's'}`;
+    }
+    const coverUrl = batch.cover || (tracks[0] && (tracks[0].cover || tracks[0].thumbnail)) || '';
+    if (coverUrl && el.downloadPreviewThumb) {
+      el.downloadPreviewThumb.src = coverUrl;
+      el.downloadPreviewThumb.style.display = 'block';
+      if (el.downloadPreviewFallback) el.downloadPreviewFallback.style.display = 'none';
+    } else {
+      if (el.downloadPreviewThumb) el.downloadPreviewThumb.style.display = 'none';
+      if (el.downloadPreviewFallback) el.downloadPreviewFallback.style.display = 'none';
+    }
     updateDownloadBtnLabel();
     updateLosslessQualityState();
     updateDownloadCaptionPath();
@@ -22206,6 +22245,9 @@ function bindCoverHoldZoom(wrapEl) {
     el.btnConfirmDownload.addEventListener('click', async () => {
       if (downloadBatch) {
         const tracks = downloadBatch.tracks;
+        const isAlbum = Boolean(downloadBatch.isAlbum);
+        const albumName = downloadBatch.name || '';
+        const albumArtist = downloadBatch.artist || '';
         el.btnConfirmDownload.disabled = true;
         let done = 0;
         let failed = 0;
@@ -22214,9 +22256,18 @@ function bindCoverHoldZoom(wrapEl) {
           const t = tracks[i];
           if (el.downloadBtnText) el.downloadBtnText.textContent = `Downloading ${i + 1}/${tracks.length}`;
           try {
-            const customDir = state.downloadDir || localStorage.getItem('riff_download_dir') || '';
-            const thumbUrl = getTrackThumbUrl(t) || t.thumbnail || t.cover || '';
-            const downloadUrl = `http://127.0.0.1:${state.serverPort}/api/download?url=${encodeURIComponent(t.url || '')}&id=${encodeURIComponent(t.id || '')}&title=${encodeURIComponent(t.title || '')}&artist=${encodeURIComponent(t.artist || '')}&format=${selectedFormat}&quality=${selectedQuality}&thumbnail=${encodeURIComponent(thumbUrl)}&customDir=${encodeURIComponent(customDir)}`;
+            const baseDir = state.downloadDir || localStorage.getItem('riff_download_dir') || '';
+            let customDir = baseDir;
+            if (isAlbum && albumName) {
+              const safeSub = (albumArtist ? `${albumArtist} - ${albumName}` : albumName)
+                .replace(/[<>:"/\\|?*]/g, '').trim();
+              if (safeSub) {
+                customDir = baseDir ? `${baseDir}/${safeSub}` : safeSub;
+              }
+            }
+            const thumbUrl = getTrackThumbUrl(t) || t.thumbnail || t.cover || downloadBatch.cover || '';
+            const trackAlbum = t.album || albumName || '';
+            const downloadUrl = `http://127.0.0.1:${state.serverPort}/api/download?url=${encodeURIComponent(t.url || '')}&id=${encodeURIComponent(t.id || '')}&title=${encodeURIComponent(t.title || '')}&artist=${encodeURIComponent(t.artist || '')}&album=${encodeURIComponent(trackAlbum)}&format=${selectedFormat}&quality=${selectedQuality}&thumbnail=${encodeURIComponent(thumbUrl)}&customDir=${encodeURIComponent(customDir)}`;
             const res = await fetch(downloadUrl);
             const text = await res.text();
             let data;
@@ -22383,6 +22434,32 @@ function bindCoverHoldZoom(wrapEl) {
     btnDownloadPlaylist.addEventListener('click', () => {
       const pl = (state.playlists || []).find(p => p.id === state.currentPlaylistId);
       openDownloadAllModal(pl);
+    });
+  }
+
+  const btnDownloadAlbum = document.getElementById('btn-download-album');
+  if (btnDownloadAlbum) {
+    btnDownloadAlbum.addEventListener('click', () => {
+      const alb = state.currentAlbum;
+      if (!alb || !Array.isArray(alb._tracks) || alb._tracks.length === 0) {
+        showToast('Please wait for album tracks to load', 'info');
+        return;
+      }
+      openDownloadAllModal({
+        name: alb.title || 'Album',
+        artist: alb.artist || '',
+        cover: alb.cover || '',
+        tracks: alb._tracks
+      }, 'album');
+    });
+  }
+
+  const btnPlayAlbum = document.getElementById('btn-play-album');
+  if (btnPlayAlbum) {
+    btnPlayAlbum.addEventListener('click', () => {
+      const alb = state.currentAlbum;
+      if (!alb || !Array.isArray(alb._tracks) || alb._tracks.length === 0) return;
+      playTrack(alb._tracks[0], alb._tracks, 0, 'album');
     });
   }
 

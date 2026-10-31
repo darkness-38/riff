@@ -3905,7 +3905,7 @@ async function downloadCoverTemp(thumbUrl, tmpDir) {
   return null;
 }
 
-async function handleDownload(req, res, trackUrl, title, artist, format = 'mp3', quality = '0', startParam = null, endParam = null, raw = false, trackId = null, streamUrlParam = null) {
+async function handleDownload(req, res, trackUrl, title, artist, format = 'mp3', quality = '0', startParam = null, endParam = null, raw = false, trackId = null, streamUrlParam = null, albumParam = null) {
   trackUrl = normalizeSoundCloudUrl(trackUrl);
   if (!trackUrl && (!title || !artist)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -3931,15 +3931,17 @@ async function handleDownload(req, res, trackUrl, title, artist, format = 'mp3',
 
   const isRaw = Boolean(raw);
   const parsedUrl = (req && req.url) ? url.parse(req.url, true) : { query: {} };
+  const album = albumParam || (parsedUrl.query && parsedUrl.query.album) || '';
   let downloadsDir = getDownloadsDir();
   const customDir = parsedUrl.query && parsedUrl.query.customDir;
   if (customDir) {
     try {
-      if (!fs.existsSync(customDir)) {
-        fs.mkdirSync(customDir, { recursive: true });
+      const resolvedCustomDir = path.isAbsolute(customDir) ? customDir : path.join(downloadsDir, customDir);
+      if (!fs.existsSync(resolvedCustomDir)) {
+        fs.mkdirSync(resolvedCustomDir, { recursive: true });
       }
-      if (fs.existsSync(customDir)) {
-        downloadsDir = customDir;
+      if (fs.existsSync(resolvedCustomDir)) {
+        downloadsDir = resolvedCustomDir;
       }
     } catch (_) {}
   }
@@ -4010,7 +4012,9 @@ async function handleDownload(req, res, trackUrl, title, artist, format = 'mp3',
         ffmpegArgs = ['-y'];
         if (start !== null) ffmpegArgs.push('-ss', String(start));
         if (end !== null) ffmpegArgs.push('-to', String(end));
-        ffmpegArgs.push('-i', cachedFile, '-i', coverTmp, '-map', '0:a:0', '-map', '1:v:0', '-c:v', 'mjpeg', '-id3v2_version', '3', '-metadata:s:v', 'title=Album cover', '-metadata:s:v', 'comment=Cover (front)', '-b:a', bitrate, '-metadata', 'title=' + (title || cleanTitle), '-metadata', 'artist=' + (artist || cleanArtist), outPath);
+        ffmpegArgs.push('-i', cachedFile, '-i', coverTmp, '-map', '0:a:0', '-map', '1:v:0', '-c:v', 'mjpeg', '-id3v2_version', '3', '-metadata:s:v', 'title=Album cover', '-metadata:s:v', 'comment=Cover (front)', '-b:a', bitrate, '-metadata', 'title=' + (title || cleanTitle), '-metadata', 'artist=' + (artist || cleanArtist));
+        if (album) ffmpegArgs.push('-metadata', 'album=' + album);
+        ffmpegArgs.push(outPath);
       } else {
         ffmpegArgs = ['-y'];
         if (start !== null) ffmpegArgs.push('-ss', String(start));
@@ -4024,6 +4028,7 @@ async function handleDownload(req, res, trackUrl, title, artist, format = 'mp3',
         }
         ffmpegArgs.push('-metadata', `title=${title || cleanTitle}`);
         ffmpegArgs.push('-metadata', `artist=${artist || cleanArtist}`);
+        if (album) ffmpegArgs.push('-metadata', `album=${album}`);
         ffmpegArgs.push(outPath);
       }
 
@@ -7903,6 +7908,7 @@ const server = http.createServer(async (req, res) => {
     const streamUrl = parsedUrl.query.streamUrl || '';
     const title = parsedUrl.query.title || '';
     const artist = parsedUrl.query.artist || '';
+    const album = parsedUrl.query.album || '';
     const format = parsedUrl.query.format || 'mp3';
     const quality = parsedUrl.query.quality || '0';
     const raw = parsedUrl.query.raw === '1' || parsedUrl.query.raw === 'true';
@@ -7916,7 +7922,7 @@ const server = http.createServer(async (req, res) => {
       const n = parseFloat(parsedUrl.query.end);
       if (!isNaN(n)) end = Math.max(0, n);
     }
-    return handleDownload(req, res, trackUrl, title, artist, format, quality, start, end, raw, trackId, streamUrl);
+    return handleDownload(req, res, trackUrl, title, artist, format, quality, start, end, raw, trackId, streamUrl, album);
   }
 
   if (parsedUrl.pathname === '/api/tmp-file') {
